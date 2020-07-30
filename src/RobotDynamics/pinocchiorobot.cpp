@@ -142,22 +142,50 @@ void PinocchioRobot::ComputeRootSize() {
 
 bool PinocchioRobot::initializeRobotModelAndData(pinocchio::Model *robotModel,
                                                  pinocchio::Data *robotData) {
-  m_boolModel = checkModel(robotModel);
-  if (!m_boolModel)
-    return false;
-
   // initialize the model
   ///////////////////////
   m_robotModel = robotModel;
+  
+  // Check if the Frame BODY exists, if not try to create it
+  pinocchio::FrameIndex body;
+  if ((robotModel->existFrame("BODY")) || (robotModel->existFrame("body"))){
+    body = (robotModel->existFrame("BODY"))
+          ? m_robotModel->getFrameId("BODY")
+          : m_robotModel->getFrameId("body");
+    m_waist = m_robotModel->frames[body].parent;
+  } else {
+    try{
+      body = m_robotModel->getFrameId("base_link");
+      m_robotModel->frames.at(body).name = "BODY";
+      pinocchio::Frame base_link_frame;
+      base_link_frame.name = "base_link";
+      base_link_frame.type = pinocchio::FIXED_JOINT;
+      base_link_frame.parent = m_robotModel->frames.at(body).parent;
+      pinocchio::FrameIndex base_link_id = m_robotModel->addFrame(base_link_frame);
+      pinocchio::JointIndex base_link_joint_id = m_robotModel->frames.at(base_link_id).parent;
+
+      pinocchio::Frame waist_frame = pinocchio::Frame("WAIST", base_link_joint_id, 
+                                                      base_link_id, pinocchio::SE3::Identity(), 
+                                                      pinocchio::FIXED_JOINT);
+      pinocchio::FrameIndex waist_frame_id = m_robotModel->addFrame(waist_frame);
+      pinocchio::JointIndex waist_joint = m_robotModel->frames[waist_frame_id].parent;
+
+      m_robotModel->frames.at(body).parent = waist_joint;
+      m_waist = waist_joint;
+    } catch (...) {
+      const std::string exception_message("BODY is not a valid body name and cannot be created");
+      throw std::invalid_argument(exception_message);
+      return false;
+    }
+  }
+  m_boolModel = checkModel(m_robotModel);
+  if (!m_boolModel)
+    return false;
 
   // initialize the short cut for the joint ids
   pinocchio::FrameIndex chest = m_robotModel->getFrameId("torso");
   m_chest = m_robotModel->frames[chest].parent;
-  pinocchio::FrameIndex waist = (robotModel->existFrame("BODY"))
-                                    ? m_robotModel->getFrameId("BODY")
-                                    : m_robotModel->getFrameId("body");
 
-  m_waist = m_robotModel->frames[waist].parent;
   pinocchio::FrameIndex ra = m_robotModel->getFrameId("r_ankle");
   m_rightFoot.associatedAnkle = m_robotModel->frames[ra].parent;
   pinocchio::FrameIndex la = m_robotModel->getFrameId("l_ankle");
